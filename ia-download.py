@@ -38,7 +38,7 @@ Out = TypeVar('Out')
 class FakePool:
 	"""multiprocessing.Pool but running in this thread. Useful for getting
 	stack traces from exception occurring in the callback."""
-	def imap_unordered(self, fn:Callable[In,Out], iterable:Iterable[In]) -> Iterable[Out]:
+	def imap_unordered(self, fn:Callable[[In],Out], iterable:Iterable[In]) -> Iterable[Out]:
 		for item in iterable:
 			yield fn(item)
 

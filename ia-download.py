@@ -6,8 +6,11 @@ import hashlib
 import csv
 import internetarchive as ia
 import random
+import dbm
+import pickle
+from contextlib import ExitStack
 from datetime import datetime
-from typing import NamedTuple
+from typing import NamedTuple, List, Tuple, Union, Optional, Callable, TypeVar, Iterable
 from multiprocessing import Pool
 from itertools import repeat
 
@@ -29,7 +32,18 @@ class Download(NamedTuple):
 	time: int
 
 
-def download_file(session, file:File, file_path:str) -> Download:
+In = TypeVar('In')
+Out = TypeVar('Out')
+
+class FakePool:
+	"""multiprocessing.Pool but running in this thread. Useful for getting
+	stack traces from exception occurring in the callback."""
+	def imap_unordered(self, fn:Callable[In,Out], iterable:Iterable[In]) -> Iterable[Out]:
+		for item in iterable:
+			yield fn(item)
+
+
+def download_file(session, file:File, file_path:str, *, timeout=12) -> Tuple[Download,int]:
 	# Construct temporary filename in same directory
 	dest_dir, file_name = os.path.split(file_path)
 	temp_path = os.path.join(dest_dir, f'.{file_name}~{os.getpid()}')
@@ -37,7 +51,7 @@ def download_file(session, file:File, file_path:str) -> Download:
 	start_time = datetime.now()
 
 	# Fetch header
-	response = session.get(file.url, stream=True, timeout=12, auth=ia.auth.S3Auth(session.access_key, session.secret_key))
+	response = session.get(file.url, stream=True, timeout=timeout, auth=ia.auth.S3Auth(session.access_key, session.secret_key))
 	if not response.ok:
 		raise DownloadError(response.reason)
 
@@ -70,7 +84,7 @@ def worker_setup():
 	session.mount_http_adapter(max_retries=2)
 
 
-def worker_download_file(entry):
+def worker_download_file(entry) -> Tuple[str,File,Union[Tuple[Download,int],Exception]]:
 	global session
 	(item, file), dest_dir = entry
 	item_path = os.path.join(dest_dir, item)
@@ -87,12 +101,27 @@ def worker_download_file(entry):
 	return item, file, retval
 
 
+def ia_get_files(cache, session, item:str, *, glob_pattern:Optional[str]=None) -> List[File]:
+	key = f"{item}${glob_pattern!s}"
+	if cache is not None and key in cache:
+		return pickle.loads(cache[key])
+	
+	response = session.get_item(item).get_files(glob_pattern=args.filter)
+	files = [File(file.name, file.url, file.md5) for file in response]
+	
+	if cache is not None:
+		cache[key] = pickle.dumps(files)
+
+	return files
+
+
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--jobs', '-j', type=int, default=os.cpu_count(), help='parallel downloads')
 	parser.add_argument('--dest', '-d', type=str, default='.', help='destination directory')
 	parser.add_argument('--shuffle', action='store_true', help='download items in random order')
 	parser.add_argument('--filter', default='*.warc.gz', help='filename filter')
+	parser.add_argument('--cache', type=str, help='IA api call cache')
 	parser.add_argument('identifiers', type=str, nargs='*', help='IA identifiers to download warcs from. If none specified read from stdin')
 
 	args = parser.parse_args()
@@ -106,19 +135,26 @@ if __name__ == '__main__':
 		args.identifiers = list(args.identifiers)
 		random.shuffle(args.identifiers)
 
-	files = (
-		(item, File(file.name, file.url, file.md5))
-		for item in args.identifiers
-		for file in session.get_item(item).get_files(glob_pattern=args.filter)
-	)
+	with ExitStack() as ctx:
+		cache = ctx.enter_context(dbm.open(args.cache, 'c', mode=0o600)) if args.cache else None
 
-	# Keep a counter of how often downloads fail. If it keeps happening, stop
-	# because we might just making things worse.
-	consecutive_errors = 0
+		files = (
+			(item, file)
+			for item in args.identifiers
+			for file in ia_get_files(cache, session, item, glob_pattern=args.filter)
+		)
 
-	out = csv.DictWriter(sys.stdout, ['timestamp', 'item', 'name', 'path', 'size', 'time', 'md5', 'error'], delimiter='\t')
+		# Keep a counter of how often downloads fail. If it keeps happening, stop
+		# because we might just making things worse.
+		consecutive_errors = 0
 
-	with Pool(args.jobs, initializer=worker_setup) as pool:
+		if args.jobs > 1:
+			pool = ctx.enter_context(Pool(args.jobs, initializer=worker_setup))
+		else:
+			pool = FakePool()
+
+		out = csv.DictWriter(sys.stdout, ['timestamp', 'item', 'name', 'path', 'size', 'time', 'md5', 'error'], delimiter='\t')
+
 		for item, file, retval in pool.imap_unordered(worker_download_file, zip(files, repeat(args.dest))):
 			if retval is None:
 				continue

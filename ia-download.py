@@ -44,7 +44,7 @@ class FakePool:
 			yield fn(item)
 
 
-def download_file(session, file:File, file_path:str, *, timeout=12) -> Tuple[Download,int]:
+def download_file(session, file:File, file_path:str, *, timeout=60) -> Tuple[Download,int]:
 	# Construct temporary filename in same directory
 	dest_dir, file_name = os.path.split(file_path)
 	temp_path = os.path.join(dest_dir, f'.{file_name}~{os.getpid()}')

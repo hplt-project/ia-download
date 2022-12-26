@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import NamedTuple, List, Tuple, Union, Optional, Callable, TypeVar, Iterable
 from multiprocessing import Pool
 from itertools import repeat
+from requests.exceptions import ConnectionError
 
 
 class DownloadError(RuntimeError):
@@ -91,7 +92,7 @@ def worker_download_file(entry) -> Tuple[str,File,Union[Tuple[Download,int],Exce
 	file_path = os.path.join(item_path, file.name)
 
 	retval = None
-	if not os.path.exists(file_path):
+	if not os.path.exists(file_path): # TODO: at some point also check filesize and/or md5 sum?
 		try:
 			os.makedirs(item_path, exist_ok=True)
 			retval = download_file(session, file, file_path)
@@ -106,7 +107,18 @@ def ia_get_files(cache, session, item:str, *, glob_pattern:Optional[str]=None) -
 	if cache is not None and key in cache:
 		return pickle.loads(cache[key])
 	
-	response = session.get_item(item).get_files(glob_pattern=args.filter)
+	response = None
+	for retry in range(1, 6):
+		try:
+			response = session.get_item(item).get_files(glob_pattern=args.filter)
+			break
+		except ConnectionError as err:
+			if retry < 5:
+				print(f"Waiting for {4**retry}s because: {err}", file=sys.stderr)
+				time.sleep(4 ** retry) # back-off
+			else:
+				raise
+	
 	files = [File(file.name, file.url, file.md5) for file in response]
 	
 	if cache is not None:

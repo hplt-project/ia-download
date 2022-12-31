@@ -8,6 +8,7 @@ import internetarchive as ia
 import random
 import dbm
 import pickle
+import time
 from contextlib import ExitStack
 from datetime import datetime
 from typing import NamedTuple, List, Tuple, Union, Optional, Callable, TypeVar, Iterable

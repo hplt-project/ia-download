@@ -80,20 +80,38 @@ def download_file(session, file:File, file_path:str, *, timeout=60) -> Tuple[Dow
 	return Download(file_path, size, digest.hexdigest(), (datetime.now() - start_time).seconds)
 
 
+def compute_md5(path:str, *, buffering=2**16) -> str:
+	with open(path, 'rb', buffering=buffering) as fh:
+		digest = hashlib.md5()
+		while True:
+			chunk = fh.read(buffering)
+			if len(chunk) == 0:
+				break
+			digest.update(chunk)
+		return digest.hexdigest()
+
+
 def worker_setup():
 	global session
 	session = ia.api.get_session()
 	session.mount_http_adapter(max_retries=2)
 
 
-def worker_download_file(entry) -> Tuple[str,File,Union[Tuple[Download,int],Exception]]:
+def worker_download_file(entry: Tuple[Tuple[str, File],str,bool]) -> Tuple[str,File,Union[Tuple[Download,int],Exception]]:
 	global session
-	(item, file), dest_dir = entry
+	(item, file), dest_dir, check_md5 = entry
 	item_path = os.path.join(dest_dir, item)
 	file_path = os.path.join(item_path, file.name)
-
 	retval = None
-	if not os.path.exists(file_path): # TODO: at some point also check filesize and/or md5 sum?
+	
+	# If we find the wrong md5, delete the file.
+	if check_md5 and os.path.exists(file_path):
+		file_md5 = compute_md5(file_path)
+		if file_md5 != file.md5:
+			print(f"md5 mismatch: {file_path}\t{file_md5}\t{file.md5}", file=sys.stderr)
+			os.unlink(file_path)
+
+	if not os.path.exists(file_path):
 		try:
 			os.makedirs(item_path, exist_ok=True)
 			retval = download_file(session, file, file_path)
@@ -135,6 +153,7 @@ if __name__ == '__main__':
 	parser.add_argument('--shuffle', action='store_true', help='download items in random order')
 	parser.add_argument('--filter', default='*.warc.gz', help='filename filter')
 	parser.add_argument('--cache', type=str, help='IA api call cache')
+	parser.add_argument('--check-md5', action='store_true', help='check md5 is file already exists')
 	parser.add_argument('identifiers', type=str, nargs='*', help='IA identifiers to download warcs from. If none specified read from stdin')
 
 	args = parser.parse_args()
@@ -168,7 +187,7 @@ if __name__ == '__main__':
 
 		out = csv.DictWriter(sys.stdout, ['timestamp', 'item', 'name', 'path', 'size', 'time', 'md5', 'error'], delimiter='\t')
 
-		for item, file, retval in pool.imap_unordered(worker_download_file, zip(files, repeat(args.dest))):
+		for item, file, retval in pool.imap_unordered(worker_download_file, zip(files, repeat(args.dest), repeat(args.check_md5))):
 			if retval is None:
 				continue
 			elif isinstance(retval, Download):

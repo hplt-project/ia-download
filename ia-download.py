@@ -176,6 +176,8 @@ if __name__ == '__main__':
 			for file in ia_get_files(cache, session, item, glob_pattern=args.filter)
 		)
 
+		total_errors = 0
+
 		# Keep a counter of how often downloads fail. If it keeps happening, stop
 		# because we might just making things worse.
 		consecutive_errors = 0
@@ -210,6 +212,9 @@ if __name__ == '__main__':
 					'error': str(retval)
 				})
 				consecutive_errors += 1
+				total_errors += 1
 
 			if consecutive_errors > 100:
 				raise RuntimeError('More than a 100 consecutive errors')
+
+	sys.exit(1 if total_errors > 0 else 0)

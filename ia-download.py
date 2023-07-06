@@ -55,6 +55,7 @@ def download_file(session, file:File, file_path:str, *, timeout=60) -> Tuple[Dow
 	# Fetch header
 	response = session.get(file.url, stream=True, timeout=timeout, auth=ia.auth.S3Auth(session.access_key, session.secret_key))
 	if not response.ok:
+		print(f"ERROR: non-ok server response for {file.url}: {response.reason}", file=sys.stderr)
 		raise DownloadError(response.reason)
 
 	# Fetch body, calculate checksum as we read through its chunks
@@ -67,6 +68,7 @@ def download_file(session, file:File, file_path:str, *, timeout=60) -> Tuple[Dow
 				digest.update(chunk)
 
 		if digest.hexdigest() != file.md5:
+			print(f"ERROR: md5 mismatch when downloading {file.url}", file=sys.stderr)
 			raise DownloadError('md5 mismatch')
 
 		# Download finished and no errors! Move file to its permanent destination.

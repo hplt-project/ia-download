@@ -1,11 +1,30 @@
 # Internet Archive Downloader
 Downloads collections from the Internet Archive.
 
-Usage:
+Installation:
 
 ```bash
 pip install internetarchive
 ia configure
+```
+
+ia-downloads.sh downloads the given crawl, making as many attempts as required to download all files successfully:
+
+```bash
+bash ia-download.sh <CRAWL> <DOWNLOAD_DIR> <LOG_DIR> <NTHREADS> <CREDENTIALS_FILE>
+```
+
+E.g.:
+
+```bash
+bash ia-download.sh survey_00003 ../../../two/warc/ia/ ../../../two/warc/log/ia/ 1000 ./ia-env/ia-oe\@ifi.uio.no.ini
+```
+
+
+
+For more control run the following steps manually: get the list of items for the given crawl (ia search), then get file URLs and download files for those items (ia-download.py). Check stderr, if downloading some of the files failed re-run ia-download.py.
+
+```bash
 ia search -i collection:wide00016 > wide00016.txt
 
 ./ia-download.py -j 64 < ./wide00016.txt | tee ia-download.log
@@ -27,6 +46,7 @@ optional arguments:
   --shuffle             download items in random order
   --filter FILTER       filename filter
 ```
+
 
 
 ## Acknowledgements

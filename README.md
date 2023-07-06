@@ -8,11 +8,11 @@ pip install internetarchive
 ia configure
 ```
 
-ia-downloads.sh downloads the given crawl, making as many attempts as required to download all files successfully:
-
+Usage:
 ```bash
 bash ia-download.sh <CRAWL> <DOWNLOAD_DIR> <LOG_DIR> <NTHREADS> <CREDENTIALS_FILE>
 ```
+downloads the given CRAWL to DOWNLOAD_DIR/CRAWL in NTHREADS parallel threads, making as many attempts as required to download all files successfully. Logs are writtent to LOG_DIR/CRAWL. User credentials are taken from CREDENTIALS_FILE.
 
 E.g.:
 

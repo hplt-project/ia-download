@@ -1,18 +1,19 @@
 # Internet Archive Downloader
-Downloads collections from the Internet Archive.
+Downloads collections from the [Internet Archive](https://archive.org/).
 
-Installation:
+## Installation
 
 ```bash
 pip install internetarchive
 ia configure
 ```
 
-Usage:
+## Fully automated downloading with restarts on failures
+The easiest way to download a crawl from Internet Archive is running [ia-download.sh](ia-download.sh):
 ```bash
 bash ia-download.sh <CRAWL> <DOWNLOAD_DIR> <LOG_DIR> <NTHREADS> <CREDENTIALS_FILE>
 ```
-downloads the given CRAWL to DOWNLOAD_DIR/CRAWL in NTHREADS parallel threads, making as many attempts as required to download all files successfully. Logs are writtent to LOG_DIR/CRAWL. User credentials are taken from CREDENTIALS_FILE.
+downloads the given CRAWL to DOWNLOAD_DIR/CRAWL in NTHREADS parallel threads, making as many attempts as required to download all files successfully. Logs are written to LOG_DIR/CRAWL. User credentials are taken from CREDENTIALS_FILE.
 
 E.g.:
 
@@ -20,9 +21,8 @@ E.g.:
 bash ia-download.sh survey_00003 ../../../two/warc/ia/ ../../../two/warc/log/ia/ 1000 ./ia-env/ia-oe\@ifi.uio.no.ini
 ```
 
-
-
-For more control run the following steps manually: get the list of items for the given crawl (ia search), then get file URLs and download files for those items (ia-download.py). Check stderr, if downloading some of the files failed re-run ia-download.py.
+## Downloading step-by-step
+For more control over the downloading process, e.g. when the previous method does not work, run the following steps manually: get the list of items for the given crawl (ia search), then get file URLs and download files for those items (ia-download.py). Check stderr, if downloading some of the files failed re-run ia-download.py.
 
 ```bash
 ia search -i collection:wide00016 > wide00016.txt

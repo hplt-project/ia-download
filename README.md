@@ -1,5 +1,5 @@
 # Internet Archive Downloader
-Downloads collections from the [Internet Archive](https://archive.org/).
+Downloads collections from the [Internet Archive](https://archive.org/). Requires an active Internet Archive account.
 
 ## Installation
 

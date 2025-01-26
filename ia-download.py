@@ -15,7 +15,9 @@ from typing import NamedTuple, List, Tuple, Union, Optional, Callable, TypeVar, 
 from multiprocessing import Pool
 from itertools import repeat
 from requests.exceptions import ConnectionError
-
+import time
+from collections import defaultdict
+import traceback
 
 class DownloadError(RuntimeError):
 	pass
@@ -50,36 +52,52 @@ def download_file(session, file:File, file_path:str, *, timeout=60) -> Tuple[Dow
 	dest_dir, file_name = os.path.split(file_path)
 	temp_path = os.path.join(dest_dir, f'.{file_name}~{os.getpid()}')
 
-	start_time = datetime.now()
-
+	start_time = time.perf_counter()
+	durs = defaultdict(float)
 	# Fetch header
 	response = session.get(file.url, stream=True, timeout=timeout, auth=ia.auth.S3Auth(session.access_key, session.secret_key))
 	if not response.ok:
 		print(f"ERROR: non-ok server response for {file.url}: {response.reason}", file=sys.stderr)
 		raise DownloadError(response.reason)
 
+	durs['http_get'] = time.perf_counter() - start_time
 	# Fetch body, calculate checksum as we read through its chunks
 	digest = hashlib.md5()
 	size = 0
 	try:
 		with open(temp_path, 'wb') as fout:
-			for chunk in response.iter_content(chunk_size=1048576):
+			#durs['open_session_and_file'] = time.perf_counter() - start_time
+			#st1 = time.perf_counter()
+			st2 = time.perf_counter()
+			for chunk in response.iter_content(chunk_size=300*2**20):
+				durs['iter_response'] += time.perf_counter() - st2
+				st = time.perf_counter()
 				size += fout.write(chunk)
+				durs['write'] += time.perf_counter() - st
 				digest.update(chunk)
+				st2 = time.perf_counter()
 
+			#durs['download+write'] = (time.perf_counter() - st1)
 		if digest.hexdigest() != file.md5:
 			print(f"ERROR: md5 mismatch when downloading {file.url}", file=sys.stderr)
 			raise DownloadError('md5 mismatch')
 
 		# Download finished and no errors! Move file to its permanent destination.
+		#st = time.perf_counter()
 		os.rename(temp_path, file_path)
+		#durs['rename'] = time.perf_counter() - st
 	finally:
 		# Clean up tempfile in case of error
 		# TODO: Resume download if we implement Partial or chunked download.
 		if os.path.exists(temp_path):
+			print("ERROR while downloading file!", file=sys.stderr)
+			print(traceback.format_exc(), file=sys.stderr)
 			os.unlink(temp_path)
 
-	return Download(file_path, size, digest.hexdigest(), (datetime.now() - start_time).seconds)
+
+	full_time = (time.perf_counter() - start_time)
+	print(f"({size/2**20/full_time:.1f} MiB/s) File downloaded, size={size/2**20:.3f} MB, time {full_time:.5f}s of which ", ', '.join((f"{k} {100*v/full_time:.1f}%" for k,v in durs.items())), file=sys.stderr)
+	return Download(file_path, size, digest.hexdigest(), full_time)
 
 
 def compute_md5(path:str, *, buffering=2**16) -> str:
@@ -119,7 +137,9 @@ def worker_download_file(entry: Tuple[Tuple[str, File],str,bool]) -> Tuple[str,F
 			retval = download_file(session, file, file_path)
 		except Exception as err:
 			retval = err
-	
+	else:
+            print("File already downloaded:", file_path,  file=sys.stderr)
+
 	return item, file, retval
 
 
@@ -189,19 +209,22 @@ if __name__ == '__main__':
 		else:
 			pool = FakePool()
 
-		out = csv.DictWriter(sys.stdout, ['timestamp', 'item', 'name', 'path', 'size', 'time', 'md5', 'error'], delimiter='\t')
+		out = csv.DictWriter(sys.stdout, ['speed','timestamp', 'item', 'name', 'path', 'size', 'time', 'md5', 'error'], delimiter='\t')
 
+		start_time, down_size = time.perf_counter(), 0
 		for item, file, retval in pool.imap_unordered(worker_download_file, zip(files, repeat(args.dest), repeat(args.check_md5))):
 			if retval is None:
 				continue
 			elif isinstance(retval, Download):
+				down_size += retval.size
 				out.writerow({
+					'speed': f'{down_size / 2**20 / (time.perf_counter() - start_time):.2f} MiB/s',
 					'timestamp': datetime.now().isoformat(),
 					'item': item,
 					'name': file.name,
 					'path': retval.path,
 					'size': retval.size,
-					'time': retval.time,
+                                        'time': '{:.2f}'.format(retval.time),
 					'md5': retval.md5,
 					
 				})

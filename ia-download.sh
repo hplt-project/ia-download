@@ -32,7 +32,7 @@ export IA_CONFIG_FILE=$IA_CONFIG
 DATE=$(date +'%Y%m%d%H%M%S')
 
 cnt=1
-until python ${SCRIPT_DIR}/ia-download.py --cache ${LOG_DIR}/${COLLECTION}/cache.db --shuffle --dest ${OUTPUT_DIR}/${COLLECTION} --jobs $JOBS <${ITEMLIST} >${LOG_DIR}/${COLLECTION}/attempt_${cnt}.${DATE}.stdout 2>${LOG_DIR}/${COLLECTION}/attempt_${cnt}.${DATE}.stderr ; do
+until python -u ${SCRIPT_DIR}/ia-download.py --cache ${LOG_DIR}/${COLLECTION}/cache.db --shuffle --dest ${OUTPUT_DIR}/${COLLECTION} --jobs $JOBS <${ITEMLIST} >${LOG_DIR}/${COLLECTION}/attempt_${cnt}.${DATE}.stdout 2>${LOG_DIR}/${COLLECTION}/attempt_${cnt}.${DATE}.stderr ; do
     echo "Attempt $cnt: not all files were downloaded, see ${LOG_DIR}/${COLLECTION}/attempt_${cnt}.${DATE}.stderr for errors. Retrying..."
     let cnt++
 done
